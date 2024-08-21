@@ -2,6 +2,8 @@ package service
 
 import (
 	"database/sql"
+	"fmt"
+	"time"
 )
 
 type Book struct {
@@ -79,7 +81,7 @@ func (s *BookService) GetBooks() ([]Book, error) {
 func (s *BookService) GetBookById(id int) (*Book, error) {
 	query := "select id, title, author, genre from books where id = ?"
 	result := s.db.QueryRow(query, id)
-	
+
 	var book Book
 	err := result.Scan(&book.ID, &book.Title, &book.Author, &book.Genre)
 	if err != nil {
@@ -92,14 +94,61 @@ func (s *BookService) GetBookById(id int) (*Book, error) {
 func (s *BookService) UpdateBook(book *Book) error {
 	query := "update books set title=?, author=?, genre=? where id = ?"
 	_, err := s.db.Exec(query, book.Title, book.Author, book.Genre, book.ID)
-	
+
 	return err
 }
-
 
 func (s *BookService) DeleteBook(id int) error {
 	query := "delete from books where id = ?"
 	_, err := s.db.Exec(query, id)
 
 	return err
+}
+
+func (s *BookService) SearchBooksByName(name string) ([]Book, error) {
+		query := "select id, title, author, genre from books where title like ?"
+		results, err := s.db.Query(query, "%" + name + "%")
+		if err != nil {
+			return nil, err
+		}
+		defer results.Close()
+
+		var books []Book
+		for results.Next() {
+			var book Book
+			err := results.Scan(&book.ID, &book.Title, &book.Author, &book.Genre)
+			if err != nil {
+				return nil, err
+			}
+			books = append(books, book)
+		}
+	
+		return books, nil
+	}
+
+func (s *BookService) SimulateReading(bookId int, duration time.Duration, results chan<- string) {
+	book, err := s.GetBookById(bookId)
+	if err != nil || book == nil {
+		results <- fmt.Sprintf("Book %d not found", bookId)
+		return
+	}
+
+	time.Sleep(duration)
+	results <- fmt.Sprintf("Book %s has been read", book.Title)
+}
+
+func (s *BookService) SimulateMultipleReadings(booksIds []int, duration time.Duration) []string {
+	results := make(chan string, len(booksIds))
+	for _, id := range booksIds {
+		go func(bookId int) {
+			s.SimulateReading(bookId, duration, results)
+		}(id)
+	}
+
+	var responses []string
+	for range booksIds {
+		responses = append(responses, <-results)
+	}
+	close(results)
+	return responses
 }
